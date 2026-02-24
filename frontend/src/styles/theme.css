@@ -1,0 +1,129 @@
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Light Theme */
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  
+  --popover: #FFFFFF;
+  --popover-foreground: #0F172A;
+  
+  --primary: #0F172A;
+  --primary-foreground: #FFFFFF;
+  
+  --secondary: #F1F5F9;
+  --secondary-foreground: #0F172A;
+  
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  
+  --accent: #F1F5F9;
+  --accent-foreground: #0F172A;
+  
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+  
+  --safe: #16A34A;
+  --safe-foreground: #FFFFFF;
+  
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+  
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #0F172A;
+  
+  --radius: 0.625rem;
+  
+  --font-size: 16px;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+}
+
+.dark {
+  /* Dark Theme */
+  --background: #0B1120;
+  --foreground: #F8FAFC;
+  
+  --card: #111827;
+  --card-foreground: #F8FAFC;
+  
+  --popover: #111827;
+  --popover-foreground: #F8FAFC;
+  
+  --primary: #F8FAFC;
+  --primary-foreground: #0B1120;
+  
+  --secondary: #1E293B;
+  --secondary-foreground: #F8FAFC;
+  
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
+  
+  --accent: #1E293B;
+  --accent-foreground: #F8FAFC;
+  
+  --destructive: #FF3B3B;
+  --destructive-foreground: #FFFFFF;
+  
+  --safe: #00FFAA;
+  --safe-foreground: #000000;
+  
+  --warning: #FFA500;
+  --warning-foreground: #000000;
+  
+  --border: #1E293B;
+  --input: #1E293B;
+  --ring: #94A3B8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-safe: var(--safe);
+  --color-safe-foreground: var(--safe-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1, h2, h3, h4, h5, h6, button, input, label {
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+}
