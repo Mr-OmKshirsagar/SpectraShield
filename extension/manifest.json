@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "SpectraShield",
+  "version": "1.0.0",
+  "description": "Privacy-first phishing detection with explainable risk scoring. Automatically scans Gmail and shows risk badges.",
+  "permissions": [],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://mail.google.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SpectraShield - Scan email"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://mail.google.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_end"
+    }
+  ]
+}

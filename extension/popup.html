@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SpectraShield AI</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <span class="logo">🛡 SpectraShield</span>
+    </header>
+
+    <section class="form">
+      <label>Email content</label>
+      <textarea id="emailText" rows="4" placeholder="Paste email body or subject..."></textarea>
+      <label>Link (optional)</label>
+      <input type="text" id="url" placeholder="https://...">
+      <label>Sender (optional)</label>
+      <input type="text" id="sender" placeholder="sender@example.com">
+      <label class="checkbox">
+        <input type="checkbox" id="privateMode" checked> Private mode (don't store)
+      </label>
+      <button id="analyzeBtn">Analyze</button>
+    </section>
+
+    <section id="result" class="result hidden">
+      <div class="risk-row">
+        <span class="label">Risk</span>
+        <span id="riskValue" class="risk-value">—</span>
+      </div>
+      <div class="row"><span class="label">Verdict</span><span id="verdict">—</span></div>
+      <div class="row"><span class="label">Confidence</span><span id="confidence">—</span></div>
+      <div class="row"><span class="label">Threat</span><span id="category">—</span></div>
+      <p id="reasoning" class="reasoning"></p>
+    </section>
+
+    <section id="error" class="error hidden"></section>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
