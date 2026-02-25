@@ -208,7 +208,11 @@ const LinkPreviewDemo: React.FC = () => {
                 ) : (
                   <LinkPreview
                     url={selectedLink.url}
-                    riskScore={linkAnalysis != null ? Math.round(linkAnalysis.final_risk) : selectedLink.riskScore}
+                    riskScore={
+                      linkAnalysis != null
+                        ? Math.round(linkAnalysis.breakdown?.url_score ?? linkAnalysis.unified_severity_score ?? linkAnalysis.final_risk)
+                        : selectedLink.riskScore
+                    }
                     domainAgeDays={linkAnalysis?.domain_age_days ?? undefined}
                   />
                 )}

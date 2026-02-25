@@ -46,6 +46,7 @@ analyzeBtn.addEventListener('click', async () => {
       body: JSON.stringify({
         email_text: text,
         url: (url.value || '').trim() || undefined,
+        urls: (url.value || '').trim() ? [(url.value || '').trim()] : [],
         sender_email: (sender.value || '').trim() || undefined,
         private_mode: privateMode.checked,
       }),

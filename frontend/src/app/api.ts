@@ -11,16 +11,57 @@ export interface AnalyzeRequest {
   email_text: string;
   email_header?: string | null;
   url?: string | null;
+  urls?: string[];
   sender_email?: string | null;
   private_mode?: boolean;
+  thread_id?: string | null;
+  opened_mail_body?: string | null;
+  opened_mail_urls?: string[];
+}
+
+export interface IntelligenceProfile {
+  ssl_status?: {
+    issuer?: string | null;
+    expiry_date?: string | null;
+    is_valid?: boolean;
+  };
+  location_data?: {
+    country?: string | null;
+    isp?: string | null;
+    ip_address?: string | null;
+  };
+  threat_array?: string[];
+  advanced_technical_details?: {
+    page_title?: string | null;
+    domain_age_days?: number | null;
+    redirect_chain?: string[];
+    redirect_hops?: number;
+    dns_records?: {
+      a?: string[];
+      mx?: string[];
+    };
+    whois?: Record<string, unknown>;
+    final_url?: string | null;
+  };
 }
 
 export interface AnalyzeResponse {
   final_risk: number;
+  unified_severity_score?: number;
   verdict: string;
   confidence_level: string;
   threat_category?: string;
   reasoning_summary?: string;
+  threat_array?: string[];
+  intelligence_profile?: IntelligenceProfile;
+  risk_breakdown?: {
+    brand_match?: string;
+    logic_flags?: string[];
+    global_reputation?: { flagged?: number; total?: number };
+    local_score?: number;
+    external_score?: number;
+    ssl_age_score?: number;
+  };
   breakdown: {
     manipulation_score: number;
     url_score: number;

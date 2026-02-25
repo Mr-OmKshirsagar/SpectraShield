@@ -10,17 +10,40 @@ from app.services.header_analyzer import analyze_email_header
 from app.services.threat_intel import analyze_threat_intel
 from app.services.threat_category import get_threat_category, build_reasoning_summary
 from app.database import scan_collection
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
 router = APIRouter()
 
+import re
+
 @router.post("/analyze")
 def analyze_email(data: EmailRequest):
 
     manipulation_score, flagged_phrases, psychological_index = calculate_manipulation_score(data.email_text)
-    url_score, url_metadata = analyze_url(data.url) if data.url else (0, {})
+    
+    # Gather all URLs
+    gathered_urls = set()
+    if data.url:
+        gathered_urls.add(data.url)
+    if data.urls:
+        gathered_urls.update(data.urls)
+        
+    text_urls = re.findall(r'https?://[^\s\]\)\"\'<>]+', data.email_text, flags=re.IGNORECASE)
+    for u in text_urls:
+        cleaned_u = u.rstrip(']>).\'"')
+        if cleaned_u:
+            gathered_urls.add(cleaned_u)
+
+    url_score = 0
+    url_metadata = {}
+    for u in gathered_urls:
+        score, meta = analyze_url(u)
+        if score >= url_score:
+            url_score = score
+            url_metadata = meta
+
     ai_score = detect_ai_pattern(data.email_text)
     brand_score = detect_brand_impersonation(data.email_text, data.sender_email)
 
@@ -38,6 +61,11 @@ def analyze_email(data: EmailRequest):
     ai_score,
     brand_score + header_score + threat_score
 )
+
+    # URL-only scans (used by the extension link scanner): expose a direct URL final_score.
+    url_intel = url_metadata.get("intel") or {}
+    url_final_score = url_intel.get("score", url_score)
+    is_url_only = (not (data.email_text or "").strip()) and bool(gathered_urls)
 
     attack_simulation = generate_attack_simulation(final_risk)
 
@@ -57,7 +85,7 @@ def analyze_email(data: EmailRequest):
         "verdict": verdict,
         "confidence_level": confidence,
         "threat_category": threat_category,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
     # 🔒 Store only if private_mode is False
@@ -68,10 +96,12 @@ def analyze_email(data: EmailRequest):
 
     return {
         "final_risk": final_risk,
+        "final_score": url_final_score if is_url_only else final_risk,
         "verdict": verdict,
         "confidence_level": confidence,
         "threat_category": threat_category,
         "reasoning_summary": reasoning_summary,
+        "url_intelligence": url_metadata.get("intel"),
         "breakdown": {
             "manipulation_score": manipulation_score,
             "url_score": url_score,

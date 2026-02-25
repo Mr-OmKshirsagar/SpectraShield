@@ -20,11 +20,22 @@ import {
   Link2,
   Zap,
 } from "lucide-react";
+import type { IntelligenceProfile } from "../api";
 
 interface LinkPreviewProps {
   url?: string;
   riskScore?: number;
   domainAgeDays?: number | null;
+  intelligenceProfile?: IntelligenceProfile;
+  riskBreakdown?: {
+    brand_match?: string;
+    logic_flags?: string[];
+    global_reputation?: { flagged?: number; total?: number };
+    local_score?: number;
+    external_score?: number;
+    ssl_age_score?: number;
+  };
+  threatArray?: string[];
 }
 
 interface ThreatIndicator {
@@ -38,6 +49,9 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
   url = "https://secure-verify-account.tk/login/microsoft/verify",
   riskScore = 87,
   domainAgeDays,
+  intelligenceProfile,
+  riskBreakdown,
+  threatArray,
 }) => {
   const [showFullUrl, setShowFullUrl] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -54,45 +68,38 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
     danger: mounted && resolvedTheme === "light" ? "#DC2626" : "#FF3B3B",
   };
 
-  const domainAge = domainAgeDays != null ? `${domainAgeDays} days` : "Unknown";
-  const sslStatus = "Invalid Certificate";
-  const sslValid = false;
-  const location = "Unknown";
-  const registrar = "FreeDomainRegistry.tk";
+  const tech = intelligenceProfile?.advanced_technical_details;
+  const domainAgeValue = domainAgeDays ?? tech?.domain_age_days ?? null;
+  const domainAge = domainAgeValue != null ? `${domainAgeValue} days` : "Unknown";
+  const sslValid = !!intelligenceProfile?.ssl_status?.is_valid;
+  const sslStatus = sslValid ? "SSL Valid" : "SSL Missing/Expired";
+  const sslIssuer = intelligenceProfile?.ssl_status?.issuer || "Unknown";
+  const sslExpiry = intelligenceProfile?.ssl_status?.expiry_date || "Unknown";
+  const location = intelligenceProfile?.location_data?.country || "Unknown";
+  const isp = intelligenceProfile?.location_data?.isp || "Unknown";
+  const ipAddress = intelligenceProfile?.location_data?.ip_address || "Unknown";
+  const dnsA = tech?.dns_records?.a || [];
+  const dnsMX = tech?.dns_records?.mx || [];
+  const redirectHops = typeof tech?.redirect_hops === "number" ? tech.redirect_hops : 0;
+  const pageTitle = tech?.page_title || "Unknown";
+  const registrar = (tech?.whois && String((tech.whois as Record<string, unknown>).registrar || "")) || "Unknown";
   const lastScanned = "2 minutes ago";
 
-  const threatIndicators: ThreatIndicator[] = [
-    {
-      id: "1",
-      type: "critical",
-      label: "Spoofed Domain",
-      description: "Domain mimics legitimate Microsoft services",
-    },
-    {
-      id: "2",
-      type: "critical",
-      label: "Invalid SSL",
-      description: "SSL certificate is self-signed or expired",
-    },
-    {
-      id: "3",
-      type: "warning",
-      label: "New Domain",
-      description: "Domain registered within last 30 days",
-    },
-    {
-      id: "4",
-      type: "critical",
-      label: "Suspicious TLD",
-      description: "Using .tk domain commonly associated with phishing",
-    },
-    {
-      id: "5",
-      type: "warning",
-      label: "No HTTPS Redirect",
-      description: "Site accessible via insecure HTTP protocol",
-    },
-  ];
+  const sourceThreats = threatArray && threatArray.length > 0
+    ? threatArray
+    : (intelligenceProfile?.threat_array || []);
+
+  const threatIndicators: ThreatIndicator[] = sourceThreats.map((item, index) => {
+    const text = String(item || "");
+    const lower = text.toLowerCase();
+    const isCritical = /brand mimicry|virus|hidden redirection|ip host|homograph|critical/.test(lower);
+    return {
+      id: String(index + 1),
+      type: isCritical ? "critical" : "warning",
+      label: text,
+      description: isCritical ? "High-confidence heuristic or reputation signal." : "Suspicious heuristic signal detected.",
+    };
+  });
 
   const getRiskColor = (score: number) => {
     if (score >= 70) return { color: colors.danger, label: "High Risk", glow: `${colors.danger}4D` }; // 4D = 30% alpha
@@ -159,7 +166,7 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
         </div>
       </div>
 
-      {/* Security Info Bar - Grid Layout */}
+      {/* Security Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
         {/* Risk Score Meter */}
         <motion.div
@@ -178,7 +185,7 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
             <div className="flex items-center gap-2 mb-3">
               <Zap className="w-4 h-4" style={{ color: riskInfo.color }} />
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Risk Score
+                Severity Score
               </span>
             </div>
             <div className="flex items-end gap-3">
@@ -271,6 +278,7 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
             <div className="mt-2 text-xs text-muted-foreground">
               {sslValid ? 'Certificate verified' : 'Security risk detected'}
             </div>
+            <div className="mt-1 text-[10px] text-muted-foreground truncate">Issuer: {sslIssuer}</div>
           </div>
         </motion.div>
 
@@ -290,11 +298,14 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-primary">{location}</div>
+              <div className="text-sm font-bold text-primary flex items-center gap-2">
+                <span>🏳️</span>
+                <span>{location}</span>
+              </div>
               <Globe className="w-5 h-5 text-primary/50" />
             </div>
             <div className="mt-2 text-xs text-muted-foreground">
-              Server location masked
+              ISP: {isp}
             </div>
           </div>
         </motion.div>
@@ -355,6 +366,9 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
                 </div>
               </motion.div>
             ))}
+            {threatIndicators.length === 0 && (
+              <div className="text-xs text-muted-foreground">No explicit threat flags were triggered.</div>
+            )}
           </div>
         </div>
       </motion.div>
@@ -489,20 +503,40 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
             >
               <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 border border-border border-t-0 rounded-b-xl">
                 <div>
+                  <div className="text-xs text-muted-foreground mb-1">IP Address</div>
+                  <div className="text-sm text-foreground/80 font-mono">{ipAddress}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Page Title</div>
+                  <div className="text-sm text-foreground/80 font-mono truncate">{pageTitle}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Redirect Hops</div>
+                  <div className="text-sm text-foreground/80 font-mono">{redirectHops}</div>
+                </div>
+                <div>
                   <div className="text-xs text-muted-foreground mb-1">Registrar</div>
-                  <div className="text-sm text-foreground/80 font-mono">{registrar}</div>
+                  <div className="text-sm text-foreground/80 font-mono truncate">{registrar || "Unknown"}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground mb-1">TLD Risk</div>
-                  <div className="text-sm text-destructive font-semibold">High (.tk)</div>
+                  <div className="text-xs text-muted-foreground mb-1">DNS A</div>
+                  <div className="text-sm text-foreground/80 font-mono break-all">{dnsA.length ? dnsA.join(", ") : "N/A"}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground mb-1">HTTP Status</div>
-                  <div className="text-sm text-safe font-mono">200 OK</div>
+                  <div className="text-xs text-muted-foreground mb-1">DNS MX</div>
+                  <div className="text-sm text-foreground/80 font-mono break-all">{dnsMX.length ? dnsMX.join(", ") : "N/A"}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground mb-1">Response Time</div>
-                  <div className="text-sm text-foreground/80 font-mono">2.3s</div>
+                  <div className="text-xs text-muted-foreground mb-1">SSL Expiry</div>
+                  <div className="text-sm text-foreground/80 font-mono break-all">{sslExpiry}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Triggered Heuristics</div>
+                  <div className="text-sm text-foreground/80 font-mono break-all">
+                    {riskBreakdown?.logic_flags && riskBreakdown.logic_flags.length
+                      ? riskBreakdown.logic_flags.join(", ")
+                      : "None"}
+                  </div>
                 </div>
               </div>
             </motion.div>

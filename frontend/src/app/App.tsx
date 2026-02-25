@@ -34,6 +34,10 @@ const AppContent = () => {
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [viewMode, setViewMode] = useState<"popup" | "gmail" | "linkpreview" | "linkdemo" | "dashboard" | "styleguide">("popup");
 
+  useEffect(() => {
+    document.title = "SpectraShield AI";
+  }, []);
+
   const extractFirstUrl = (text: string): string | null => {
     const match = text.match(/https?:\/\/[^\s]+/i);
     return match ? match[0] : null;
@@ -176,8 +180,11 @@ const AppContent = () => {
         <ViewToggle />
         <LinkPreview
           url={url}
-          riskScore={analysis?.breakdown?.url_score ?? riskScore}
+          riskScore={analysis?.breakdown?.url_score ?? analysis?.unified_severity_score ?? analysis?.final_risk ?? riskScore}
           domainAgeDays={analysis?.domain_age_days ?? null}
+          intelligenceProfile={analysis?.intelligence_profile}
+          riskBreakdown={analysis?.risk_breakdown}
+          threatArray={analysis?.threat_array}
         />
       </div>
     );

@@ -9,9 +9,10 @@ class SimulationStep(BaseModel):
 
 
 class EmailRequest(BaseModel):
-    email_text: str
+    email_text: str = ""
     email_header: Optional[str] = None
     url: Optional[str] = None
+    urls: Optional[List[str]] = None
     sender_email: Optional[str] = None
     private_mode: Optional[bool] = False
 
