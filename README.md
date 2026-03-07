@@ -69,8 +69,10 @@ Use:
 
 - `POST /analyze` — Analyze email/link payload and return risk intelligence
 - `GET /history` — Fetch stored scan history
+- `GET /history/count` — Fetch total scan count (lightweight)
 - `DELETE /history` — Clear all history
 - `DELETE /history/{scan_id}` — Delete one scan by ID
+- `GET /dashboard/top-brands` — Top impersonated brands with filters: `days`, `risk`, `source`, `limit`
 
 ## Notes
 

@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -98,6 +98,90 @@ def _extract_urls_from_text(text: str) -> set[str]:
         if cleaned_u:
             extracted.add(cleaned_u)
     return extracted
+
+
+_NON_BRAND_MARKERS = {"none", "textual brand cue", "unknown", "clear"}
+
+_EXTERNAL_BRAND_HINTS: dict[str, str] = {
+    "microsoft": "Microsoft",
+    "office": "Microsoft",
+    "outlook": "Microsoft",
+    "paypal": "PayPal",
+    "amazon": "Amazon",
+    "apple": "Apple",
+    "google": "Google",
+    "gmail": "Google",
+    "youtube": "Google",
+    "netflix": "Netflix",
+    "facebook": "Facebook",
+    "instagram": "Facebook",
+    "linkedin": "LinkedIn",
+}
+
+
+def _parse_any_datetime(value) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
+        try:
+            dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+            return dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+    return None
+
+
+def _risk_matches(score: float, risk_filter: str) -> bool:
+    rf = (risk_filter or "all").lower()
+    if rf == "all":
+        return True
+    if rf == "low":
+        return score < 35
+    if rf == "medium":
+        return 35 <= score < 70
+    if rf == "high":
+        return score >= 70
+    return True
+
+
+def _normalize_brand_name(value: Optional[str]) -> Optional[str]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if raw.lower() in _NON_BRAND_MARKERS:
+        return None
+    return raw
+
+
+def _extract_external_brand_from_url(url: Optional[str]) -> Optional[str]:
+    raw = (url or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = urlparse(raw if raw.startswith(("http://", "https://")) else f"https://{raw}")
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        host = ""
+
+    if not host:
+        return None
+
+    host_compact = host.replace("-", ".").replace("_", ".")
+    tokens = [t for t in host_compact.split(".") if t]
+    for token, brand in _EXTERNAL_BRAND_HINTS.items():
+        if token in tokens or token in host:
+            return brand
+    return None
 
 
 def _vt_link_score_from_stats(malicious: int, total: int) -> float:
@@ -715,6 +799,81 @@ def analyze_email(data: AnalyzeRequest):
 
     response_payload["cached"] = False
     return response_payload
+
+
+@app.get("/dashboard/top-brands")
+def get_dashboard_top_brands(
+    days: int = 7,
+    risk: str = "all",
+    source: str = "blended",
+    limit: int = 6,
+):
+    days = max(1, min(int(days), 365))
+    limit = max(1, min(int(limit), 20))
+    source = (source or "blended").lower()
+    if source not in {"internal", "external", "blended"}:
+        source = "blended"
+
+    now_utc = datetime.now(timezone.utc)
+    start_utc = now_utc - timedelta(days=days)
+    counts: dict[str, int] = {}
+
+    if source in {"internal", "blended"}:
+        cursor = scans_collection.find(
+            {},
+            {
+                "risk_breakdown.brand_match": 1,
+                "final_risk": 1,
+                "timestamp": 1,
+                "updated_at": 1,
+                "created_at": 1,
+            },
+        )
+        for rec in cursor:
+            ts = (
+                _parse_any_datetime(rec.get("timestamp"))
+                or _parse_any_datetime(rec.get("updated_at"))
+                or _parse_any_datetime(rec.get("created_at"))
+            )
+            if not ts or ts < start_utc:
+                continue
+
+            score = float(rec.get("final_risk") or 0.0)
+            if not _risk_matches(score, risk):
+                continue
+
+            brand = _normalize_brand_name((rec.get("risk_breakdown") or {}).get("brand_match"))
+            if not brand:
+                continue
+            counts[brand] = counts.get(brand, 0) + 1
+
+    if source in {"external", "blended"}:
+        # OpenPhish feed is malicious-only, so map to high-risk bucket.
+        external_score = 85.0
+        if _risk_matches(external_score, risk):
+            cursor = threat_feed_collection.find({}, {"url": 1, "first_seen": 1, "last_seen": 1})
+            for rec in cursor:
+                ts = _parse_any_datetime(rec.get("last_seen")) or _parse_any_datetime(rec.get("first_seen"))
+                if not ts or ts < start_utc:
+                    continue
+
+                brand = _extract_external_brand_from_url(rec.get("url"))
+                if not brand:
+                    continue
+                counts[brand] = counts.get(brand, 0) + 1
+
+    brands = [{"name": name, "count": count} for name, count in counts.items()]
+    brands.sort(key=lambda x: x["count"], reverse=True)
+    brands = brands[:limit]
+
+    return {
+        "days": days,
+        "risk": risk,
+        "source": source,
+        "updated_at": now_utc.isoformat(),
+        "total_brands": len(brands),
+        "brands": brands,
+    }
 
 
 app.include_router(router)

@@ -111,6 +111,27 @@ export interface HistoryRecord {
   confidence_level: string;
   threat_category?: string;
   timestamp: string;
+  risk_breakdown?: {
+    brand_match?: string;
+  };
+}
+
+export interface HistoryCountResponse {
+  total_scans: number;
+}
+
+export interface TopBrandRecord {
+  name: string;
+  count: number;
+}
+
+export interface TopBrandsResponse {
+  days: number;
+  risk: "all" | "low" | "medium" | "high" | string;
+  source: "internal" | "external" | "blended" | string;
+  updated_at: string;
+  total_brands: number;
+  brands: TopBrandRecord[];
 }
 
 export async function analyzeEmail(body: AnalyzeRequest): Promise<AnalyzeResponse> {
@@ -131,6 +152,31 @@ export async function getHistory(): Promise<HistoryRecord[]> {
   const base = getApiBase();
   const res = await fetch(`${base}/history`);
   if (!res.ok) throw new Error(`History failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getHistoryCount(): Promise<HistoryCountResponse> {
+  const base = getApiBase();
+  const res = await fetch(`${base}/history/count`);
+  if (!res.ok) throw new Error(`History count failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getTopBrands(params: {
+  days: number;
+  risk: "all" | "low" | "medium" | "high";
+  source?: "internal" | "external" | "blended";
+  limit?: number;
+}): Promise<TopBrandsResponse> {
+  const base = getApiBase();
+  const query = new URLSearchParams({
+    days: String(params.days),
+    risk: params.risk,
+    source: params.source ?? "blended",
+    limit: String(params.limit ?? 6),
+  });
+  const res = await fetch(`${base}/dashboard/top-brands?${query.toString()}`);
+  if (!res.ok) throw new Error(`Top brands failed: ${res.status}`);
   return res.json();
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion } from "motion/react";
 import { useTheme } from "next-themes";
 import {
@@ -14,7 +14,7 @@ import {
   BarChart3,
   Trash2,
 } from "lucide-react";
-import { getHistory, deleteScan, clearHistory, type HistoryRecord } from "../api";
+import { getHistory, getHistoryCount, getTopBrands, deleteScan, clearHistory, type HistoryRecord } from "../api";
 import {
   LineChart,
   Line,
@@ -59,16 +59,28 @@ const isWithinLastNDays = (date: Date, days: number, now: Date): boolean => {
   return date >= start && date <= now;
 };
 
-const impersonatedBrands = [
-  { name: "Microsoft", count: 1234, color: "#00A4EF" },
-  { name: "PayPal", count: 987, color: "#0070BA" },
-  { name: "Amazon", count: 856, color: "#FF9900" },
-  { name: "Apple", count: 745, color: "#A2AAAD" },
-  { name: "Google", count: 623, color: "#4285F4" },
-  { name: "Netflix", count: 512, color: "#E50914" },
-  { name: "Facebook", count: 489, color: "#1877F2" },
-  { name: "LinkedIn", count: 367, color: "#0A66C2" },
-];
+const BRAND_COLORS: Record<string, string> = {
+  Microsoft: "#00A4EF",
+  PayPal: "#0070BA",
+  Amazon: "#FF9900",
+  Apple: "#A2AAAD",
+  Google: "#4285F4",
+  Netflix: "#E50914",
+  Facebook: "#1877F2",
+  LinkedIn: "#0A66C2",
+};
+
+const getBrandColor = (brand: string): string => {
+  if (BRAND_COLORS[brand]) return BRAND_COLORS[brand];
+
+  // Deterministic fallback for unlisted brands.
+  let hash = 0;
+  for (let i = 0; i < brand.length; i += 1) {
+    hash = (hash * 31 + brand.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  return `hsl(${hue}, 70%, 50%)`;
+};
 
 const flaggedDomains = [
   {
@@ -132,30 +144,96 @@ const Dashboard: React.FC = () => {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [clearing, setClearing] = useState(false);
+  const [impersonatedBrands, setImpersonatedBrands] = useState<Array<{ name: string; count: number; color: string }>>([]);
+  const historyCountRef = useRef<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    getHistory()
-      .then((records) => {
-        setHistory(records);
-      })
-      .catch(() => setHistory([]))
-      .finally(() => setHistoryLoading(false));
+  const refreshHistory = useCallback(async (showLoading: boolean) => {
+    if (showLoading) setHistoryLoading(true);
+    try {
+      const records = await getHistory();
+      setHistory(records);
+      historyCountRef.current = records.length;
+    } catch {
+      setHistory([]);
+      historyCountRef.current = 0;
+    } finally {
+      if (showLoading) setHistoryLoading(false);
+    }
   }, []);
+
+  const refreshTopBrands = useCallback(async () => {
+    try {
+      const res = await getTopBrands({
+        days: getDaysForRange(timeRange),
+        risk: riskFilter,
+        source: "blended",
+        limit: 6,
+      });
+      setImpersonatedBrands(
+        (res.brands || []).map((b) => ({
+          name: b.name,
+          count: b.count,
+          color: getBrandColor(b.name),
+        }))
+      );
+    } catch {
+      setImpersonatedBrands([]);
+    }
+  }, [timeRange, riskFilter]);
+
+  useEffect(() => {
+    refreshHistory(true);
+  }, [refreshHistory]);
+
+  useEffect(() => {
+    refreshTopBrands();
+  }, [refreshTopBrands]);
+
+  useEffect(() => {
+    const pollId = window.setInterval(async () => {
+      try {
+        const { total_scans } = await getHistoryCount();
+        if (historyCountRef.current === null) {
+          historyCountRef.current = total_scans;
+          return;
+        }
+        if (total_scans !== historyCountRef.current) {
+          await refreshHistory(false);
+          await refreshTopBrands();
+        }
+      } catch {
+        // Keep the dashboard usable even if polling fails intermittently.
+      }
+    }, 5000);
+
+    return () => window.clearInterval(pollId);
+  }, [refreshHistory, refreshTopBrands]);
 
   const handleDeleteScan = (scanId: string) => {
     deleteScan(scanId)
-      .then(() => setHistory((prev) => prev.filter((r) => r.id !== scanId)))
+      .then(() => {
+        setHistory((prev) => {
+          const next = prev.filter((r) => r.id !== scanId);
+          historyCountRef.current = next.length;
+          return next;
+        });
+        refreshTopBrands();
+      })
       .catch(() => {});
   };
 
   const handleClearAll = () => {
     setClearing(true);
     clearHistory()
-      .then(() => setHistory([]))
+      .then(() => {
+        setHistory([]);
+        historyCountRef.current = 0;
+        setImpersonatedBrands([]);
+      })
       .catch(() => {})
       .finally(() => setClearing(false));
   };
@@ -539,8 +617,13 @@ const Dashboard: React.FC = () => {
             <Globe className="w-5 h-5 text-destructive" />
             <h3 className="text-lg font-semibold text-foreground">Top Impersonated Brands</h3>
           </div>
-          <div className="space-y-3">
-            {impersonatedBrands.slice(0, 6).map((brand, index) => (
+          {impersonatedBrands.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              No impersonated brand signals found in the selected time range.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {impersonatedBrands.slice(0, 6).map((brand, index) => (
               <motion.div
                 key={brand.name}
                 initial={{ opacity: 0, x: -20 }}
@@ -556,7 +639,7 @@ const Dashboard: React.FC = () => {
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
-                      animate={{ width: `${(brand.count / impersonatedBrands[0].count) * 100}%` }}
+                      animate={{ width: `${(brand.count / (impersonatedBrands[0]?.count || 1)) * 100}%` }}
                       transition={{ duration: 1, delay: 0.7 + index * 0.05 }}
                       className="h-full rounded-full"
                       style={{
@@ -567,8 +650,9 @@ const Dashboard: React.FC = () => {
                   </div>
                 </div>
               </motion.div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </motion.div>
       </div>
 
