@@ -134,6 +134,20 @@ export interface TopBrandsResponse {
   brands: TopBrandRecord[];
 }
 
+export interface HeatmapCell {
+  dayIndex: number;
+  hour: number;
+  value: number;
+}
+
+export interface RiskHeatmapResponse {
+  days: number;
+  risk: "all" | "low" | "medium" | "high" | string;
+  updated_at: string;
+  max_count: number;
+  cells: HeatmapCell[];
+}
+
 export async function analyzeEmail(body: AnalyzeRequest): Promise<AnalyzeResponse> {
   const base = getApiBase();
   const res = await fetch(`${base}/analyze`, {
@@ -177,6 +191,20 @@ export async function getTopBrands(params: {
   });
   const res = await fetch(`${base}/dashboard/top-brands?${query.toString()}`);
   if (!res.ok) throw new Error(`Top brands failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getRiskHeatmap(params: {
+  days: number;
+  risk: "all" | "low" | "medium" | "high";
+}): Promise<RiskHeatmapResponse> {
+  const base = getApiBase();
+  const query = new URLSearchParams({
+    days: String(params.days),
+    risk: params.risk,
+  });
+  const res = await fetch(`${base}/dashboard/risk-heatmap?${query.toString()}`);
+  if (!res.ok) throw new Error(`Risk heatmap failed: ${res.status}`);
   return res.json();
 }
 

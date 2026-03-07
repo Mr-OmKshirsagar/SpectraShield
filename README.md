@@ -73,6 +73,7 @@ Use:
 - `DELETE /history` — Clear all history
 - `DELETE /history/{scan_id}` — Delete one scan by ID
 - `GET /dashboard/top-brands` — Top impersonated brands with filters: `days`, `risk`, `source`, `limit`
+- `GET /dashboard/risk-heatmap` — Heatmap cells from DB with filters: `days`, `risk`
 
 ## Notes
 

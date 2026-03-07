@@ -14,7 +14,7 @@ import {
   BarChart3,
   Trash2,
 } from "lucide-react";
-import { getHistory, getHistoryCount, getTopBrands, deleteScan, clearHistory, type HistoryRecord } from "../api";
+import { getHistory, getHistoryCount, getTopBrands, getRiskHeatmap, deleteScan, clearHistory, type HistoryRecord } from "../api";
 import {
   LineChart,
   Line,
@@ -28,6 +28,13 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 
 // Parse ISO timestamps and legacy "YYYY-MM-DD HH:MM:SS" into Date.
 const parseTimestamp = (ts: string): Date | null => {
@@ -145,6 +152,8 @@ const Dashboard: React.FC = () => {
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [clearing, setClearing] = useState(false);
   const [impersonatedBrands, setImpersonatedBrands] = useState<Array<{ name: string; count: number; color: string }>>([]);
+  const [heatmapData, setHeatmapData] = useState<Array<{ day: string; dayIndex: number; hour: number; value: number }>>([]);
+  const [heatmapMaxCount, setHeatmapMaxCount] = useState(0);
   const historyCountRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -185,6 +194,27 @@ const Dashboard: React.FC = () => {
     }
   }, [timeRange, riskFilter]);
 
+  const refreshHeatmap = useCallback(async () => {
+    try {
+      const res = await getRiskHeatmap({
+        days: getDaysForRange(timeRange),
+        risk: riskFilter,
+      });
+      setHeatmapData(
+        (res.cells || []).map((cell) => ({
+          day: DAY_LABELS[cell.dayIndex] || "",
+          dayIndex: cell.dayIndex,
+          hour: cell.hour,
+          value: cell.value,
+        }))
+      );
+      setHeatmapMaxCount(res.max_count || 0);
+    } catch {
+      setHeatmapData([]);
+      setHeatmapMaxCount(0);
+    }
+  }, [timeRange, riskFilter]);
+
   useEffect(() => {
     refreshHistory(true);
   }, [refreshHistory]);
@@ -192,6 +222,10 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     refreshTopBrands();
   }, [refreshTopBrands]);
+
+  useEffect(() => {
+    refreshHeatmap();
+  }, [refreshHeatmap]);
 
   useEffect(() => {
     const pollId = window.setInterval(async () => {
@@ -204,6 +238,7 @@ const Dashboard: React.FC = () => {
         if (total_scans !== historyCountRef.current) {
           await refreshHistory(false);
           await refreshTopBrands();
+          await refreshHeatmap();
         }
       } catch {
         // Keep the dashboard usable even if polling fails intermittently.
@@ -211,7 +246,15 @@ const Dashboard: React.FC = () => {
     }, 5000);
 
     return () => window.clearInterval(pollId);
-  }, [refreshHistory, refreshTopBrands]);
+  }, [refreshHistory, refreshTopBrands, refreshHeatmap]);
+
+  useEffect(() => {
+    const pollId = window.setInterval(() => {
+      refreshHeatmap();
+    }, 5000);
+
+    return () => window.clearInterval(pollId);
+  }, [refreshHeatmap]);
 
   const handleDeleteScan = (scanId: string) => {
     deleteScan(scanId)
@@ -282,24 +325,6 @@ const Dashboard: React.FC = () => {
     });
   }, [rangeHistory, timeRange]);
 
-  const heatmapData = useMemo(() => {
-    const grid: number[][] = Array(7).fill(null).map(() => Array(24).fill(0));
-    rangeHistory.forEach((r) => {
-      const t = parseTimestamp(r.timestamp);
-      if (!t) return;
-      const dayIndex = t.getDay();
-      const hour = t.getHours();
-      grid[dayIndex][hour] += 1;
-    });
-    const data: { day: string; dayIndex: number; hour: number; value: number }[] = [];
-    DAY_LABELS.forEach((day, dayIndex) => {
-      for (let hour = 0; hour < 24; hour++) {
-        data.push({ day, dayIndex, hour, value: grid[dayIndex][hour] });
-      }
-    });
-    return data;
-  }, [rangeHistory]);
-
   const threatTrendData = useMemo(() => {
     const daysToInclude = getDaysForRange(timeRange);
     const days = Array.from({ length: daysToInclude }, (_, i) => {
@@ -340,6 +365,10 @@ const Dashboard: React.FC = () => {
     tooltipBg: mounted && resolvedTheme === "light" ? "#FFFFFF" : "#1E293B",
     tooltipBorder: mounted && resolvedTheme === "light" ? "#E2E8F0" : "#334155",
   };
+
+  const recentActivityBarColors = mounted && resolvedTheme === "light"
+    ? { top: "#2563EB", bottom: "#93C5FD" }
+    : { top: "#22D3EE", bottom: "#1D4ED8" };
 
   // Statistics from backend history
   const totalDetections = rangeHistory.length;
@@ -671,7 +700,7 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="space-y-1">
             {(() => {
-              const maxHeat = Math.max(1, ...heatmapData.map((d) => d.value));
+              const maxHeat = Math.max(1, heatmapMaxCount);
               return DAY_LABELS.map((day, dayIndex) => (
                 <div key={day} className="flex items-center gap-2">
                   <span className="text-[10px] text-muted-foreground w-8">{day}</span>
@@ -784,19 +813,27 @@ const Dashboard: React.FC = () => {
             <h3 className="text-lg font-semibold text-foreground">Recent Activity</h3>
           </div>
           <div className="flex items-center gap-3">
-            <label className="text-sm text-muted-foreground">Risk:</label>
-            <select
-              value={riskFilter}
-              onChange={(e) => setRiskFilter(e.target.value as RiskFilter)}
-              aria-label="Filter scans by risk"
-              title="Filter scans by risk"
-              className="bg-muted/50 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              <option value="all">All</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2 py-1.5">
+              <label className="text-sm text-muted-foreground">Risk:</label>
+              <Select
+                value={riskFilter}
+                onValueChange={(value) => setRiskFilter(value as RiskFilter)}
+              >
+                <SelectTrigger
+                  aria-label="Filter scans by risk"
+                  title="Filter scans by risk"
+                  className="h-8 w-[140px] border-border bg-background/60"
+                >
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <button
               onClick={handleClearAll}
               disabled={history.length === 0 || clearing}
@@ -809,23 +846,48 @@ const Dashboard: React.FC = () => {
         </div>
 
         {recentActivityChartData.some((d) => d.scans > 0) && (
-          <div className="mb-6">
+          <div className="mb-6 rounded-xl border border-border/70 bg-gradient-to-b from-primary/5 to-transparent p-4">
             <h4 className="text-sm font-medium text-muted-foreground mb-3">Scans over last {getDaysForRange(timeRange)} days</h4>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={recentActivityChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} opacity={0.5} />
-                <XAxis dataKey="day" stroke={colors.text} style={{ fontSize: "11px" }} />
-                <YAxis stroke={colors.text} style={{ fontSize: "11px" }} allowDecimals={false} />
+            <ResponsiveContainer width="100%" height={190}>
+              <BarChart data={recentActivityChartData} barGap={10}>
+                <defs>
+                  <linearGradient id="recentActivityBars" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={recentActivityBarColors.top} stopOpacity={0.95} />
+                    <stop offset="100%" stopColor={recentActivityBarColors.bottom} stopOpacity={0.4} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="2 4" stroke={colors.grid} opacity={0.35} vertical={false} />
+                <XAxis
+                  dataKey="day"
+                  stroke={colors.text}
+                  tick={{ fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  stroke={colors.text}
+                  tick={{ fontSize: 11 }}
+                  allowDecimals={false}
+                  tickLine={false}
+                  axisLine={false}
+                />
                 <Tooltip
+                  shared={false}
+                  cursor={false}
                   contentStyle={{
                     backgroundColor: colors.tooltipBg,
                     border: `1px solid ${colors.tooltipBorder}`,
-                    borderRadius: "8px",
+                    borderRadius: "10px",
                     fontSize: "12px",
-                    color: colors.text
+                    color: colors.text,
                   }}
                 />
-                <Bar dataKey="scans" fill={colors.primary} radius={[4, 4, 0, 0]} />
+                <Bar
+                  dataKey="scans"
+                  fill="url(#recentActivityBars)"
+                  radius={[8, 8, 3, 3]}
+                  barSize={48}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

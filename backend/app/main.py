@@ -876,6 +876,68 @@ def get_dashboard_top_brands(
     }
 
 
+@app.get("/dashboard/risk-heatmap")
+def get_dashboard_risk_heatmap(
+    days: int = 7,
+    risk: str = "all",
+):
+    days = max(1, min(int(days), 365))
+    now_utc = datetime.now(timezone.utc)
+    start_utc = now_utc - timedelta(days=days)
+
+    grid = [[0 for _ in range(24)] for _ in range(7)]
+
+    cursor = scans_collection.find(
+        {},
+        {
+            "final_risk": 1,
+            "timestamp": 1,
+            "updated_at": 1,
+            "created_at": 1,
+        },
+    )
+
+    for rec in cursor:
+        ts = (
+            _parse_any_datetime(rec.get("timestamp"))
+            or _parse_any_datetime(rec.get("updated_at"))
+            or _parse_any_datetime(rec.get("created_at"))
+        )
+        if not ts or ts < start_utc:
+            continue
+
+        score = float(rec.get("final_risk") or 0.0)
+        if not _risk_matches(score, risk):
+            continue
+
+        # JS Date.getDay(): Sun=0..Sat=6. Python weekday(): Mon=0..Sun=6.
+        day_index = (ts.weekday() + 1) % 7
+        hour = ts.hour
+        if 0 <= day_index < 7 and 0 <= hour < 24:
+            grid[day_index][hour] += 1
+
+    cells = []
+    max_count = 0
+    for day_index in range(7):
+        for hour in range(24):
+            value = grid[day_index][hour]
+            if value > max_count:
+                max_count = value
+            cells.append({
+                "dayIndex": day_index,
+                "hour": hour,
+                "value": value,
+            })
+
+    return {
+        "days": days,
+        "risk": risk,
+        "updated_at": now_utc.isoformat(),
+        "max_count": max_count,
+        "cells": cells,
+    }
+
+
 app.include_router(router)
 
 
