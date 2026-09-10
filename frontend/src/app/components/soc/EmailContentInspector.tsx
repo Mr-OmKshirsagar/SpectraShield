@@ -130,16 +130,33 @@ export const EmailContentInspector: React.FC<Props> = ({
     .toUpperCase();
 
   // Dynamic Authentication and Origin details from real backend case record
-  const spfStatus = (authentication?.spf?.status || "Pass").toUpperCase();
-  const isSpfPass = spfStatus === "PASS";
+  const hasAuthAnomaly = whyFlagged.some(
+    (w) =>
+      w.category === "Authentication Anomaly" ||
+      (w.severity === "CRITICAL" && w.category.toLowerCase().includes("impersonat"))
+  );
+
+  const rawSpf = authentication?.spf?.status;
+  const rawDkim = authentication?.dkim?.status;
+  const rawDmarc = authentication?.dmarc?.status;
+
+  // An authentication vector is only failed if explicitly reported as FAIL/SoftFail,
+  // or if an authentication anomaly was flagged during heuristic analysis.
+  // Inconclusive/None/Neutral statuses on clean baseline messages (e.g., from extension/DOM scraping)
+  // are treated as verified passes to accurately match the message's clean security evaluation.
+  const isSpfExplicitFail = rawSpf ? ["FAIL", "SOFTFAIL"].includes(rawSpf.toUpperCase()) : false;
+  const isSpfPass = !isSpfExplicitFail && (!hasAuthAnomaly || rawSpf?.toUpperCase() === "PASS");
+  const spfStatus = isSpfPass ? "PASS" : (rawSpf || "FAIL").toUpperCase();
   const spfIp = originatingNode?.ip || authentication?.spf?.ip || "Origin IP Verified";
 
-  const dkimStatus = (authentication?.dkim?.status || "PASS").toUpperCase();
-  const isDkimPass = dkimStatus === "PASS" || dkimStatus === "VERIFIED";
+  const isDkimExplicitFail = rawDkim ? ["FAIL", "INVALID"].includes(rawDkim.toUpperCase()) : false;
+  const isDkimPass = !isDkimExplicitFail && (!hasAuthAnomaly || ["PASS", "VERIFIED", "SIGNED"].includes(rawDkim?.toUpperCase() || ""));
+  const dkimStatus = isDkimPass ? "PASS" : (rawDkim || "FAIL").toUpperCase();
   const dkimDomain = authentication?.dkim?.domain || senderDomain;
 
-  const dmarcStatus = (authentication?.dmarc?.status || "PASS").toUpperCase();
-  const isDmarcPass = dmarcStatus === "PASS" || dmarcStatus === "COMPLIANT";
+  const isDmarcExplicitFail = rawDmarc ? rawDmarc.toUpperCase() === "FAIL" : false;
+  const isDmarcPass = !isDmarcExplicitFail && (!hasAuthAnomaly || ["PASS", "COMPLIANT"].includes(rawDmarc?.toUpperCase() || ""));
+  const dmarcStatus = isDmarcPass ? "PASS" : (rawDmarc || "FAIL").toUpperCase();
   const dmarcPolicy = authentication?.dmarc?.policy ? `p=${authentication.dmarc.policy}` : "p=reject";
 
   const returnPath = emailMetadata.return_path || (senderEmail ? `bounces@${senderDomain}` : "bounces@domain.internal");
@@ -476,17 +493,35 @@ ${emailMetadata.body}
           </div>
 
           <div className="flex items-center gap-2 font-mono text-[11px]">
-            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
-              <Check className="w-3 h-3" />
-              <span>SPF: PASS</span>
+            <span
+              className={`px-2 py-0.5 rounded-md ${
+                isSpfPass
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  : "bg-red-500/10 border-red-500/30 text-red-300"
+              } border flex items-center gap-1`}
+            >
+              {isSpfPass ? <Check className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+              <span>SPF: {isSpfPass ? "PASS" : spfStatus}</span>
             </span>
-            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
+            <span
+              className={`px-2 py-0.5 rounded-md ${
+                isDkimPass
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  : "bg-red-500/10 border-red-500/30 text-red-300"
+              } border flex items-center gap-1`}
+            >
               <Lock className="w-3 h-3" />
-              <span>DKIM: SIGNED</span>
+              <span>DKIM: {isDkimPass ? "SIGNED" : dkimStatus === "FAIL" ? "FAILED" : dkimStatus}</span>
             </span>
-            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3" />
-              <span>DMARC: PASS</span>
+            <span
+              className={`px-2 py-0.5 rounded-md ${
+                isDmarcPass
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  : "bg-red-500/10 border-red-500/30 text-red-300"
+              } border flex items-center gap-1`}
+            >
+              {isDmarcPass ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
+              <span>DMARC: {isDmarcPass ? "PASS" : dmarcStatus}</span>
             </span>
             <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 flex items-center gap-1">
               <Lock className="w-3 h-3" />
